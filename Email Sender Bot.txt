@@ -1,0 +1,99 @@
+import smtplib
+import csv
+import time
+import logging
+from email.message import EmailMessage
+import os
+
+# ---------------- CONFIG ----------------
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+SENDER_EMAIL = "your_email@gmail.com"
+APP_PASSWORD = "your_app_password"  # Use Gmail App Password
+CSV_FILE = "recipients.csv"
+ATTACHMENT_PATH = "attachment.pdf"
+
+MAX_RETRIES = 3
+RETRY_DELAY = 5  # seconds
+
+# --------------- LOGGING ----------------
+logging.basicConfig(
+    filename="email_log.txt",
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+# ----------- CREATE EMAIL ---------------
+def create_email(to_email, name):
+    msg = EmailMessage()
+    msg["Subject"] = "Automated Email Report"
+    msg["From"] = SENDER_EMAIL
+    msg["To"] = to_email
+
+    # Personalized message
+    body = f"""
+    Hello {name},
+
+    Please find the attached report.
+
+    Regards,
+    Automation Bot
+    """
+    msg.set_content(body)
+
+    # Attach file
+    if os.path.exists(ATTACHMENT_PATH):
+        with open(ATTACHMENT_PATH, "rb") as f:
+            file_data = f.read()
+            file_name = os.path.basename(ATTACHMENT_PATH)
+
+        msg.add_attachment(file_data, maintype="application", subtype="octet-stream", filename=file_name)
+
+    return msg
+
+# ----------- SEND EMAIL -----------------
+def send_email(to_email, name):
+    msg = create_email(to_email, name)
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+                server.starttls()
+                server.login(SENDER_EMAIL, APP_PASSWORD)
+                server.send_message(msg)
+
+            logging.info(f"SUCCESS: Email sent to {to_email}")
+            print(f"Email sent to {to_email}")
+            break
+
+        except Exception as e:
+            logging.error(f"Attempt {attempt} failed for {to_email}: {e}")
+            print(f"Retry {attempt} failed for {to_email}")
+
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_DELAY)
+            else:
+                logging.error(f"FAILED: Could not send email to {to_email}")
+
+# ----------- READ CSV -------------------
+def read_csv_and_send():
+    try:
+        with open(CSV_FILE, newline='') as file:
+            reader = csv.DictReader(file)
+
+            for row in reader:
+                name = row.get("name")
+                email = row.get("email")
+
+                if name and email:
+                    send_email(email, name)
+                else:
+                    logging.warning(f"Invalid row: {row}")
+
+    except FileNotFoundError:
+        print("CSV file not found!")
+        logging.error("CSV file not found")
+
+# -------------- MAIN --------------------
+if __name__ == "__main__":
+    read_csv_and_send()
